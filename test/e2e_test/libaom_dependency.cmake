@@ -33,7 +33,7 @@ endif(APPLE)
 
 if (UNIX)
 set(CUSTOM_CONFIG "-DBUILD_SHARED_LIBS=1")
-set(CUSTOM_BUILD_CMD make aom)
+set(CUSTOM_BUILD_CMD make aom_av1_decoder)
 set(CUSTOM_POST_BUILD COMMAND ${CMAKE_COMMAND} -E make_directory ${TARGET_OUTPUT_PATH}
                       COMMAND ${CMAKE_COMMAND} -E copy
                        ${CMAKE_BINARY_DIR}/libaom/src/DepLibAom-build/${TARGET} ${TARGET_OUTPUT_PATH})

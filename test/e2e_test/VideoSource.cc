@@ -96,9 +96,7 @@ EbErrorType VideoSource::init_frame_buffer() {
     case IMG_FMT_444: {
         chroma_size = luma_size;
     } break;
-    default: {
-        chroma_size = luma_size >> 2;
-    } break;
+    default: { chroma_size = luma_size >> 2; } break;
     }
 
     // Determine
@@ -110,6 +108,7 @@ EbErrorType VideoSource::init_frame_buffer() {
         return EB_ErrorInsufficientResources;
     }
 
+    memset(frame_buffer_, 0, sizeof(EbSvtIOFormat));
     frame_buffer_->width = width_with_padding_;
     frame_buffer_->height = height_with_padding_;
     frame_buffer_->origin_x = 0;
@@ -218,49 +217,42 @@ uint32_t VideoFileSource::read_input_frame() {
         printf("Reach file end\r\n");
         return 0;
     }
-    int chroma_down_size = 2;
     int width_downsize = 1;
     int height_downsize = 1;
     int pixel_byte_size = 1;
 
     switch (image_format_) {
     case IMG_FMT_420: {
-        chroma_down_size = 2;
         width_downsize = 1;
         height_downsize = 1;
         pixel_byte_size = 1;
         break;
     }
     case IMG_FMT_422: {
-        chroma_down_size = 1;
         width_downsize = 1;
         height_downsize = 0;
         pixel_byte_size = 1;
         break;
     }
     case IMG_FMT_444: {
-        chroma_down_size = 0;
         width_downsize = 0;
         height_downsize = 0;
         pixel_byte_size = 1;
         break;
     }
     case IMG_FMT_420P10_PACKED: {
-        chroma_down_size = 2;
         width_downsize = 1;
         height_downsize = 1;
         pixel_byte_size = 2;
         break;
     }
     case IMG_FMT_422P10_PACKED: {
-        chroma_down_size = 1;
         width_downsize = 1;
         height_downsize = 0;
         pixel_byte_size = 2;
         break;
     }
     case IMG_FMT_444P10_PACKED: {
-        chroma_down_size = 0;
         width_downsize = 0;
         height_downsize = 0;
         pixel_byte_size = 2;
@@ -447,14 +439,6 @@ uint32_t VideoFileSource::read_input_frame() {
         }
     }
 
-    //     printf("Target:[%dx%d:%d],Read[%d]\r\n",
-    //            width_with_padding_,
-    //            height_with_padding_,
-    //            (width_with_padding_ * height_with_padding_) +
-    //                2 * ((width_with_padding_ * height_with_padding_) >>
-    //                     chroma_down_size),
-    //            filled_len);
-
     return filled_len;
 }
 
@@ -510,7 +494,9 @@ EbErrorType VideoFileSource::open_source(const uint32_t init_pos,
     if (frame_count == 0)
         frame_count_ = file_frames_ - init_pos_;
     else
-        frame_count_ = frame_count;
+        frame_count_ = (file_frames_ - init_pos_) > frame_count
+                           ? frame_count
+                           : (file_frames_ - init_pos_);
 
     if (seek_to_frame(init_pos_) != EB_ErrorNone) {
         fclose(file_handle_);
@@ -556,7 +542,7 @@ EbSvtIOFormat *VideoFileSource::get_frame_by_index(const uint32_t index) {
         return nullptr;
     }
     // Seek to frame by index
-    if (seek_to_frame(init_pos_) != EB_ErrorNone)
+    if (seek_to_frame(index) != EB_ErrorNone)
         return nullptr;
 
     frame_size_ = read_input_frame();

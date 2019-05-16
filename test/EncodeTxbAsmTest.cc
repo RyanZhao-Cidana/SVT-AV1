@@ -43,9 +43,8 @@ static INLINE uint8_t *set_levels(uint8_t *const levels_buf,
 }
 
 // test assembly code of av1_txb_init_levels
-using TxbInitLevelsFunc = void (*)(const TranLow *const coeff,
-                                   const int width, const int height,
-                                   uint8_t *const levels);
+using TxbInitLevelsFunc = void (*)(const TranLow *const coeff, const int width,
+                                   const int height, uint8_t *const levels);
 using TxbInitLevelParam = std::tuple<TxbInitLevelsFunc, int>;
 /**
  * @brief Unit test for av1_txb_init_levels_avx2:

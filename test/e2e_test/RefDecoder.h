@@ -88,11 +88,11 @@ class RefDecoder {
     } RefDecoderErr;
 
   public:
-    /** Constructor of ReconSink
+    /** Constructor of RefDecoder
      * @param ret the error code found in construction
      */
     RefDecoder(RefDecoderErr &ret);
-    /** Destructor of ReconSink	  */
+    /** Destructor of RefDecoder	  */
     virtual ~RefDecoder();
 
   public:

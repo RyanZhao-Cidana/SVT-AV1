@@ -4,18 +4,16 @@
  */
 
 /******************************************************************************
- * @file ReconSink.cc
+ * @file FrameQueue.cc
  *
- * @brief Impelmentation of reconstruction frame sink
- *
- * @author Cidana-Edmond
+ * @brief Impelmentation of reconstruction frame queue
  *
  ******************************************************************************/
 
 #include <stdio.h>
 #include <vector>
 #include <algorithm>
-#include "ReconSink.h"
+#include "FrameQueue.h"
 #include "CompareTools.h"
 #ifdef ENABLE_DEBUG_MONITOR
 #include "VideoMonitor.h"
@@ -31,26 +29,17 @@
 #define FOPEN(f, s, m) f = fopen(s, m)
 #endif
 
-static void delete_mug(ReconSink::ReconMug *mug) {
-    if (mug) {
-        if (mug->mug_buf) {
-            delete[] mug->mug_buf;
-        }
-        delete mug;
-    }
-}
-
 using svt_av1_e2e_tools::compare_image;
-class ReconSinkFile : public ReconSink {
+class FrameQueueFile : public FrameQueue {
   public:
-    ReconSinkFile(const VideoFrameParam &param, const char *file_path)
-        : ReconSink(param) {
-        sink_type_ = RECON_SINK_FILE;
+    FrameQueueFile(const VideoFrameParam &param, const char *file_path)
+        : FrameQueue(param) {
+        queue_type_ = FRAME_QUEUE_FILE;
         max_frame_ts_ = 0;
         FOPEN(recon_file_, file_path, "wb");
         record_list_.clear();
     }
-    virtual ~ReconSinkFile() {
+    virtual ~FrameQueueFile() {
         if (recon_file_) {
             fflush(recon_file_);
             fclose(recon_file_);
@@ -58,39 +47,38 @@ class ReconSinkFile : public ReconSink {
         }
         record_list_.clear();
     }
-    void fill_mug(ReconMug *mug) override {
-        if (recon_file_ && mug->filled_size &&
-            mug->filled_size <= mug->mug_size &&
-            mug->time_stamp < (uint64_t)frame_count_) {
-            if (mug->time_stamp >=
+    void add_frame(VideoFrame *frame) override {
+        if (recon_file_ && frame->buf_size &&
+            frame->timestamp < (uint64_t)frame_count_) {
+            if (frame->timestamp >=
                 max_frame_ts_) {  // new frame is larger than max timestamp
                 fseeko64(recon_file_, 0, SEEK_END);
-                for (size_t i = max_frame_ts_; i < mug->time_stamp + 1; ++i) {
-                    fwrite(mug->mug_buf, 1, mug->mug_size, recon_file_);
+                for (size_t i = max_frame_ts_; i < frame->timestamp + 1; ++i) {
+                    fwrite(frame->buffer, 1, frame->buf_size, recon_file_);
                 }
-                max_frame_ts_ = mug->time_stamp;
+                max_frame_ts_ = frame->timestamp;
             }
 
             rewind(recon_file_);
-            uint64_t frameNum = mug->time_stamp;
+            uint64_t frameNum = frame->timestamp;
             while (frameNum > 0) {
-                int ret = fseeko64(recon_file_, mug->filled_size, SEEK_CUR);
+                int ret = fseeko64(recon_file_, frame->buf_size, SEEK_CUR);
                 if (ret != 0) {
                     return;
                 }
                 frameNum--;
             }
-            fwrite(mug->mug_buf, 1, mug->filled_size, recon_file_);
+            fwrite(frame->buffer, 1, frame->buf_size, recon_file_);
             fflush(recon_file_);
-            record_list_.push_back((uint32_t)mug->time_stamp);
+            record_list_.push_back((uint32_t)frame->timestamp);
         }
-        delete_mug(mug);
+        delete frame;
     }
-    const ReconMug *take_mug(const uint64_t time_stamp) override {
+    const VideoFrame *take_frame(const uint64_t time_stamp) override {
         if (recon_file_ == nullptr)
             return nullptr;
 
-        ReconMug *mug = nullptr;
+        VideoFrame *new_frame = nullptr;
         fseeko64(recon_file_, 0, SEEK_END);
         int64_t actual_size = ftello64(recon_file_);
         if (actual_size > 0 &&
@@ -100,27 +88,27 @@ class ReconSinkFile : public ReconSink {
                 // printf("Error in fseeko64  returnVal %i\n", ret);
                 return nullptr;
             }
-            mug = get_empty_mug();
-            if (mug) {
+            new_frame = get_empty_frame();
+            if (new_frame) {
                 size_t read_size =
-                    fread(mug->mug_buf, 1, frame_size_, recon_file_);
-                if (read_size <= 0) {
-                    pour_mug(mug);
-                    mug = nullptr;
+                    fread(new_frame->buffer, 1, frame_size_, recon_file_);
+                if (read_size != frame_size_) {
+                    printf("read recon file error!\n");
+                    delete_frame(new_frame);
+                    new_frame = nullptr;
                 } else {
-                    mug->filled_size = (uint32_t)read_size;
-                    mug->time_stamp = time_stamp;
+                    new_frame->timestamp = time_stamp;
                 }
             }
         }
 
-        return mug;
+        return new_frame;
     }
-    const ReconMug *take_mug_inorder(const uint32_t index) override {
-        return take_mug(index);
+    const VideoFrame *take_frame_inorder(const uint32_t index) override {
+        return take_frame(index);
     }
-    void pour_mug(ReconMug *mug) override {
-        delete_mug(mug);
+    void delete_frame(VideoFrame *frame) override {
+        delete frame;
     }
     bool is_compelete() override {
         if (record_list_.size() < frame_count_)
@@ -133,7 +121,7 @@ class ReconSinkFile : public ReconSink {
 
   public:
     FILE *recon_file_; /**< file handle to dave reconstruction video frames, set
-                          it to public for accessable by create_recon_sink */
+                          it to public for accessable by create_frame_queue */
 
   protected:
     uint64_t max_frame_ts_; /**< maximun timestamp of current frames in list */
@@ -141,71 +129,73 @@ class ReconSinkFile : public ReconSink {
                                            check if the file is completed*/
 };
 
-class ReconSinkBufferSort_ASC {
+class FrameQueueBufferSort_ASC {
   public:
-    bool operator()(ReconSink::ReconMug *a, ReconSink::ReconMug *b) const {
-        return a->time_stamp < b->time_stamp;
+    bool operator()(VideoFrame *a, VideoFrame *b) const {
+        return a->timestamp < b->timestamp;
     };
 };
 
-class ReconSinkBuffer : public ReconSink {
+class FrameQueueBuffer : public FrameQueue {
   public:
-    ReconSinkBuffer(VideoFrameParam fmt) : ReconSink(fmt) {
-        sink_type_ = RECON_SINK_BUFFER;
-        mug_list_.clear();
+    FrameQueueBuffer(VideoFrameParam fmt) : FrameQueue(fmt) {
+        queue_type_ = FRAME_QUEUE_BUFFER;
+        frame_list_.clear();
     }
-    virtual ~ReconSinkBuffer() {
-        while (mug_list_.size() > 0) {
-            delete_mug(mug_list_.back());
-            mug_list_.pop_back();
+    virtual ~FrameQueueBuffer() {
+        while (frame_list_.size() > 0) {
+            delete frame_list_.back();
+            frame_list_.pop_back();
         }
     }
-    void fill_mug(ReconMug *mug) override {
-        if (mug->time_stamp < (uint64_t)frame_count_) {
-            mug_list_.push_back(mug);
-            std::sort(
-                mug_list_.begin(), mug_list_.end(), ReconSinkBufferSort_ASC());
+    void add_frame(VideoFrame *frame) override {
+        if (frame->timestamp < (uint64_t)frame_count_) {
+            frame_list_.push_back(frame);
+            std::sort(frame_list_.begin(),
+                      frame_list_.end(),
+                      FrameQueueBufferSort_ASC());
         } else  // drop the frames out of limitation
-            delete_mug(mug);
+            delete frame;
     }
-    const ReconMug *take_mug(const uint64_t time_stamp) override {
-        for (ReconMug *mug : mug_list_) {
-            if (mug->time_stamp == time_stamp)
-                return mug;
+    const VideoFrame *take_frame(const uint64_t time_stamp) override {
+        for (VideoFrame *frame : frame_list_) {
+            if (frame->timestamp == time_stamp)
+                return frame;
         }
         return nullptr;
     }
-    const ReconMug *take_mug_inorder(const uint32_t index) override {
-        if (index < mug_list_.size())
-            return mug_list_.at(index);
+    const VideoFrame *take_frame_inorder(const uint32_t index) override {
+        if (index < frame_list_.size())
+            return frame_list_.at(index);
         return nullptr;
     }
-    void pour_mug(ReconMug *mug) override {
-        std::vector<ReconMug *>::iterator it =
-            std::find(mug_list_.begin(), mug_list_.end(), mug);
-        if (it != mug_list_.end()) {  // if the mug is in list
-            delete_mug(*it);
-            mug_list_.erase(it);
-        } else  // only delete the mug not in list
-            delete_mug(mug);
+    void delete_frame(VideoFrame *frame) override {
+        std::vector<VideoFrame *>::iterator it =
+            std::find(frame_list_.begin(), frame_list_.end(), frame);
+        if (it != frame_list_.end()) {  // if the video frame is in list
+            delete *it;
+            frame_list_.erase(it);
+        } else  // only delete the video frame not in list
+            delete frame;
     }
     bool is_compelete() override {
-        if (mug_list_.size() < frame_count_)
+        if (frame_list_.size() < frame_count_)
             return false;
 
-        ReconMug *mug = mug_list_.at(frame_count_ - 1);
-        if (mug == nullptr || mug->time_stamp != frame_count_ - 1)
+        VideoFrame *frame = frame_list_.at(frame_count_ - 1);
+        if (frame == nullptr || frame->timestamp != frame_count_ - 1)
             return false;
         return true;
     }
 
   protected:
-    std::vector<ReconMug *> mug_list_; /**< list of frame containers */
+    std::vector<VideoFrame *> frame_list_; /**< list of frame containers */
 };
 
-class RefSink : public ICompareSink, ReconSinkBuffer {
+class RefQueue : public ICompareQueue, FrameQueueBuffer {
   public:
-    RefSink(VideoFrameParam fmt, ReconSink *my_friend) : ReconSinkBuffer(fmt) {
+    RefQueue(VideoFrameParam fmt, FrameQueue *my_friend)
+        : FrameQueueBuffer(fmt) {
         friend_ = my_friend;
         frame_vec_.clear();
 #ifdef ENABLE_DEBUG_MONITOR
@@ -213,12 +203,12 @@ class RefSink : public ICompareSink, ReconSinkBuffer {
         ref_monitor_ = nullptr;
 #endif
     }
-    virtual ~RefSink() {
+    virtual ~RefQueue() {
         while (frame_vec_.size()) {
             const VideoFrame *p = frame_vec_.back();
             frame_vec_.pop_back();
             if (p) {
-                // printf("Reference Sink still remain frames when
+                // printf("Reference queue still remain frames when
                 // delete(%u)\n",
                 //       (uint32_t)p->timestamp);
                 delete p;
@@ -239,10 +229,10 @@ class RefSink : public ICompareSink, ReconSinkBuffer {
 
   public:
     bool compare_video(const VideoFrame &frame) override {
-        const ReconMug *mug = friend_->take_mug(frame.timestamp);
-        if (mug) {
-            draw_frames(&frame, mug);
-            bool is_same = compare_image(mug, &frame, frame.format);
+        const VideoFrame *friend_frame = friend_->take_frame(frame.timestamp);
+        if (friend_frame) {
+            draw_frames(&frame, friend_frame);
+            bool is_same = compare_image(friend_frame, &frame);
             if (!is_same) {
                 printf("ref_frame(%u) compare failed!!\n",
                        (uint32_t)frame.timestamp);
@@ -256,10 +246,11 @@ class RefSink : public ICompareSink, ReconSinkBuffer {
     bool flush_video() override {
         bool is_all_same = true;
         for (const VideoFrame *frame : frame_vec_) {
-            const ReconMug *mug = friend_->take_mug(frame->timestamp);
-            if (mug) {
-                draw_frames(frame, mug);
-                if (!compare_image(mug, frame, frame->format)) {
+            const VideoFrame *friend_frame =
+                friend_->take_frame(frame->timestamp);
+            if (friend_frame) {
+                draw_frames(frame, friend_frame);
+                if (!compare_image(friend_frame, frame)) {
                     printf("ref_frame(%u) compare failed!!\n",
                            (uint32_t)frame->timestamp);
                     is_all_same = false;
@@ -277,7 +268,7 @@ class RefSink : public ICompareSink, ReconSinkBuffer {
         else
             printf("out of memory for clone video frame!!\n");
     }
-    void draw_frames(const VideoFrame *frame, const ReconMug *mug) {
+    void draw_frames(const VideoFrame *frame, const VideoFrame *friend_frame) {
 #ifdef ENABLE_DEBUG_MONITOR
         if (ref_monitor_ == nullptr) {
             ref_monitor_ = new VideoMonitor(frame->width,
@@ -302,17 +293,15 @@ class RefSink : public ICompareSink, ReconSinkBuffer {
                 "Recon");
         }
         if (recon_monitor_) {
-            int luma_len = frame->width * frame->height *
-                           (frame->bits_per_sample > 8 ? 2 : 1);
-            recon_monitor_->draw_frame(mug->mug_buf,
-                                       mug->mug_buf + luma_len,
-                                       mug->mug_buf + luma_len * 5 / 4);
+            recon_monitor_->draw_frame(friend_frame->planes[0],
+                                       friend_frame->planes[1],
+                                       friend_frame->planes[2]);
         }
 #endif
     }
 
   private:
-    ReconSink *friend_;
+    FrameQueue *friend_;
     std::vector<const VideoFrame *> frame_vec_;
 #ifdef ENABLE_DEBUG_MONITOR
     VideoMonitor *recon_monitor_;
@@ -320,23 +309,23 @@ class RefSink : public ICompareSink, ReconSinkBuffer {
 #endif
 };
 
-ReconSink *create_recon_sink(const VideoFrameParam &param,
-                             const char *file_path) {
-    ReconSinkFile *new_sink = new ReconSinkFile(param, file_path);
-    if (new_sink) {
-        if (new_sink->recon_file_ == nullptr) {
-            delete new_sink;
-            new_sink = nullptr;
+FrameQueue *create_frame_queue(const VideoFrameParam &param,
+                               const char *file_path) {
+    FrameQueueFile *new_queue = new FrameQueueFile(param, file_path);
+    if (new_queue) {
+        if (new_queue->recon_file_ == nullptr) {
+            delete new_queue;
+            new_queue = nullptr;
         }
     }
-    return new_sink;
+    return new_queue;
 }
 
-ReconSink *create_recon_sink(const VideoFrameParam &param) {
-    return new ReconSinkBuffer(param);
+FrameQueue *create_frame_queue(const VideoFrameParam &param) {
+    return new FrameQueueBuffer(param);
 }
 
-ICompareSink *create_ref_compare_sink(const VideoFrameParam &param,
-                                      ReconSink *recon) {
-    return new RefSink(param, recon);
+ICompareQueue *create_ref_compare_queue(const VideoFrameParam &param,
+                                        FrameQueue *recon) {
+    return new RefQueue(param, recon);
 }

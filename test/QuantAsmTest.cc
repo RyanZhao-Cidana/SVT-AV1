@@ -40,11 +40,10 @@
 
 namespace QuantizeAsmTest {
 const int deterministic_seed = 0xa42b;
-extern "C" void av1_build_quantizer(AomBitDepth bit_depth,
-                                    int32_t y_dc_delta_q, int32_t u_dc_delta_q,
-                                    int32_t u_ac_delta_q, int32_t v_dc_delta_q,
-                                    int32_t v_ac_delta_q, Quants *const quants,
-                                    Dequants *const deq);
+extern "C" void av1_build_quantizer(AomBitDepth bit_depth, int32_t y_dc_delta_q,
+                                    int32_t u_dc_delta_q, int32_t u_ac_delta_q,
+                                    int32_t v_dc_delta_q, int32_t v_ac_delta_q,
+                                    Quants *const quants, Dequants *const deq);
 
 using QuantizeFunc = void (*)(const TranLow *coeff_ptr, intptr_t n_coeffs,
                               int32_t skip_block, const int16_t *zbin_ptr,
@@ -203,18 +202,18 @@ class QuantizeTest : public ::testing::TestWithParam<QuantizeParam> {
         }
     }
 
-    SVTRandom *rnd_;           /**< random int for 8bit and 10bit coeffs */
-    Quants qtab_quants_;       /**< quant table */
-    Dequants qtab_deq_;        /**< dequant table */
-    TranLow coeff_min_;     /**< min input coeff value */
-    TranLow coeff_max_;     /**< max input coeff value */
-    QuantizeFunc quant_ref_;   /**< reference quantize function */
-    QuantizeFunc quant_test_;  /**< test target quantize function */
-    const TxSize tx_size_;     /**< input param tx_size */
-    const AomBitDepth bd_; /**< input param 8bit or 10bit */
-    int n_coeffs_;             /**< coeff number */
-    uint16_t eob_ref_;         /**< output ref eob */
-    uint16_t eob_test_;        /**< output test eob */
+    SVTRandom *rnd_;          /**< random int for 8bit and 10bit coeffs */
+    Quants qtab_quants_;      /**< quant table */
+    Dequants qtab_deq_;       /**< dequant table */
+    TranLow coeff_min_;       /**< min input coeff value */
+    TranLow coeff_max_;       /**< max input coeff value */
+    QuantizeFunc quant_ref_;  /**< reference quantize function */
+    QuantizeFunc quant_test_; /**< test target quantize function */
+    const TxSize tx_size_;    /**< input param tx_size */
+    const AomBitDepth bd_;    /**< input param 8bit or 10bit */
+    int n_coeffs_;            /**< coeff number */
+    uint16_t eob_ref_;        /**< output ref eob */
+    uint16_t eob_test_;       /**< output test eob */
 
     DECLARE_ALIGNED(32, TranLow, coeff_in_[MAX_TX_SQUARE]);
     DECLARE_ALIGNED(32, TranLow, qcoeff_ref_[MAX_TX_SQUARE]);

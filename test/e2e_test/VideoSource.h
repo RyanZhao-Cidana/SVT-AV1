@@ -42,38 +42,38 @@ class VideoSource {
     /*!\brief Get frame by index. */
     virtual EbSvtIOFormat *get_frame_by_index(const uint32_t index) = 0;
     /*!\brief Get current frame index. */
-    virtual uint32_t get_frame_index() {
+    virtual uint32_t get_frame_index() const {
         return current_frame_index_;
     };
     /*!\brief Get current frame size in bytes. */
-    virtual uint32_t get_frame_size() {
+    virtual uint32_t get_frame_size() const {
         return frame_size_;
     };
     /*!\brief Get video width with padding. SVT-AV1 support only multiple of 8
      * resolutions. We will add some padding on right side if needed.  */
-    virtual uint32_t get_width_with_padding() {
+    virtual uint32_t get_width_with_padding() const {
         return width_with_padding_;
     };
     /*!\brief Get video height with oadding.SVT-AV1 support only multiple of 8
      * resolutions. We will add some padding on bottom if needed.*/
-    virtual uint32_t get_height_with_padding() {
+    virtual uint32_t get_height_with_padding() const {
         return height_with_padding_;
     };
     /*!\brief Get video bit_depth */
-    virtual uint32_t get_bit_depth() {
+    virtual uint32_t get_bit_depth() const {
         return bit_depth_;
     };
     /*!\brief Get video image format. */
-    virtual VideoColorFormat get_image_format() {
+    virtual VideoColorFormat get_image_format() const {
         return image_format_;
     }
     /*!\brief Get total frame count. */
-    virtual uint32_t get_frame_count() {
+    virtual uint32_t get_frame_count() const {
         return frame_count_;
     }
     /*!\brief If the return value is true, video source will use svt compressed
      * 10bit mode for output . */
-    virtual bool get_compressed_10bit_mode() {
+    virtual bool get_compressed_10bit_mode() const {
         return svt_compressed_2bit_plane_;
     }
 
