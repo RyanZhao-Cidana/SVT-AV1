@@ -31,7 +31,7 @@ function build {
         if [ "$(uname -s)" = "Darwin" ]; then
             cp ../../../third_party/aom/lib/mac/*.dylib ../../../Bin/$build_type/
         else
-            cp ../../../third_party/aom/lib/linux/libaom.so ../../../Bin/$build_type/libaom.so.0
+            cp ../../../third_party/aom/lib/linux/libaom* ../../../Bin/$build_type/
         fi
     fi
     cd ..
